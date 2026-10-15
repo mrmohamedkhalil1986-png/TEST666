@@ -70,7 +70,6 @@
             border-radius: 24px;
         }
 
-        /* تنسيق مستطيل أسماء الفرق لتكون صورة champ خلفية له */
         .champ-card-bg {
             position: relative;
             background-color: rgba(11, 28, 24, 0.9);
@@ -179,13 +178,29 @@
             box-shadow: 0 0 0 8px #d4af37, 0 0 35px rgba(212, 175, 55, 0.4);
         }
 
-        /* توهج وبروز خطوط الفواصل */
         .divider-line {
             filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.9));
         }
     </style>
 </head>
 <body class="h-full flex flex-col justify-between p-3 md:p-6">
+
+    <!-- شاشة الحماية السحابية المحكمة -->
+    <div id="authScreen" style="position:fixed; inset:0; z-index:999999; background:rgba(5,18,16,0.98); backdrop-filter:blur(12px); display:flex; align-items:center; justify-content:center; font-family:'Baloo Bhaijaan 2', cursive; direction:rtl;">
+        <div style="background:rgba(11,28,24,0.98); border:2px solid rgba(234,179,8,0.7); padding:35px; border-radius:24px; max-width:420px; width:90%; text-align:center; box-shadow:0 25px 50px rgba(0,0,0,0.9);">
+            <div style="font-size:45px; margin-bottom:10px;">🔒</div>
+            <h2 style="color:#facc15; font-size:24px; font-weight:900; margin-bottom:10px;">تفعيل النسخة الرسمية</h2>
+            <p style="color:#cbd5e1; font-size:14px; margin-bottom:20px;">الرجاء إدخال كود التفعيل الخاص بك لتشغيل المسابقة على هذا الجهاز:</p>
+            
+            <input type="text" id="licenseInput" placeholder="مثال: OMAN-2026-01" style="width:100%; padding:14px; border-radius:12px; border:2px solid #334155; background:#090d16; color:#fff; font-size:16px; text-align:center; outline:none; margin-bottom:15px; box-sizing:border-box;">
+            
+            <button id="verifyBtn" onclick="verifyLicense()" style="width:100%; background:linear-gradient(180deg, #facc15, #ca8a04); color:#000; font-weight:900; padding:14px; border-radius:12px; border:none; font-size:18px; cursor:pointer; box-shadow:0 5px 0 #854d0e;">
+                تحقق وتفعيل 🚀
+            </button>
+            
+            <div id="authMsg" style="margin-top:15px; font-size:14px; font-weight:bold;"></div>
+        </div>
+    </div>
 
     <!-- عنصر الصوت المباشر -->
     <audio id="bgMusic" loop preload="auto">
@@ -362,6 +377,91 @@
     </div>
 
     <script>
+        // الرابط السحابي الصحيح لجدول البيانات
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxqf9C29VzI-nB20g9tzwD_TG_Z68ib9c15rNKndTG-rWBtiddtn4u698dACUV-H1ObWw/exec";
+
+        function getDeviceID() {
+            let deviceId = localStorage.getItem('game_device_id');
+            if (!deviceId) {
+                deviceId = 'dev_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
+                localStorage.setItem('game_device_id', deviceId);
+            }
+            return deviceId;
+        }
+
+        // الفحص الإلزامي: إبقاء الشاشة مغلقة تماماً إذا لم يكن الجهاز مفعلاً محلياً بختم سحابي صالح
+        window.addEventListener('DOMContentLoaded', () => {
+            const authScr = document.getElementById('authScreen');
+            if (localStorage.getItem('game_activated') === 'true') {
+                if(authScr) authScr.style.display = 'none';
+            } else {
+                if(authScr) authScr.style.display = 'flex';
+            }
+        });
+
+        // دالة التحقق الصارمة من السيرفر
+        async function verifyLicense() {
+            const key = document.getElementById('licenseInput').value.trim();
+            const msgDiv = document.getElementById('authMsg');
+            const btn = document.getElementById('verifyBtn');
+            
+            if (!key) {
+                msgDiv.style.color = '#f87171';
+                msgDiv.textContent = 'الرجاء إدخال الكود أولاً!';
+                return;
+            }
+
+            msgDiv.style.color = '#facc15';
+            msgDiv.textContent = '⏳ جاري التحقق من السيرفر...';
+            btn.disabled = true;
+
+            try {
+                // إرسال الطلب عبر نافذة مخفية (Iframe) أو رابط JSONP لتجاوز قيود CORS وقراءة رد السيرفر الحقيقي
+                const response = await fetch(`${SCRIPT_URL}?key=${encodeURIComponent(key)}&deviceId=${encodeURIComponent(getDeviceID())}`);
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    localStorage.setItem('game_activated', 'true');
+                    msgDiv.style.color = '#4ade80';
+                    msgDiv.textContent = '✅ ' + result.message;
+                    
+                    setTimeout(() => {
+                        const authScr = document.getElementById('authScreen');
+                        if(authScr) authScr.style.display = 'none';
+                    }, 1000);
+                } else {
+                    msgDiv.style.color = '#f87171';
+                    msgDiv.textContent = '❌ ' + (result.message || 'الكود غير صالح أو مستخدم على جهاز آخر.');
+                    btn.disabled = false;
+                }
+
+            } catch (error) {
+                // في حال فشل الاتصال المباشر بسبب سياسات المتصفح، نجبر النظام على طلب السيرفر بطريقة آمنة
+                try {
+                    const fallbackRes = await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ key: key, deviceId: getDeviceID() })
+                    });
+                    const fallbackData = await fallbackRes.json();
+                    
+                    if (fallbackData.status === 'success') {
+                        localStorage.setItem('game_activated', 'true');
+                        msgDiv.style.color = '#4ade80';
+                        msgDiv.textContent = '✅ تم التفعيل بنجاح!';
+                        setTimeout(() => {
+                            document.getElementById('authScreen').style.display = 'none';
+                        }, 1000);
+                    } else {
+                        throw new Error(fallbackData.message);
+                    }
+                } catch (err) {
+                    msgDiv.style.color = '#f87171';
+                    msgDiv.textContent = '❌ الكود خطأ أو غير موجود في قاعدة البيانات!';
+                    btn.disabled = false;
+                }
+            }
+        }
+
         function tryNextExt(imgEl, exts) {
             if (!imgEl.dataset.extIndex) imgEl.dataset.extIndex = "0";
             let idx = parseInt(imgEl.dataset.extIndex);
@@ -419,9 +519,7 @@
         const colors = ['#047857', '#b91c1c', '#d97706', '#0f766e', '#854d0e', '#15803d', '#991b1b', '#0369a1'];
         const charNames = ['char1', 'char2', 'char3', 'char4', 'char5', 'char6', 'char7', 'char8'];
 
-        // الأسئلة الـ 32 المستخرجة من درسي الجداول الزمنية والتقويمات
         const questions = [
-            // أسئلة درس الجداول الزمنية (16 سؤالاً)
             { q: "تشير ساعة عقارب إلى الساعة الثالثة والنصف بعد الظهر. كيف يُكتب هذا الوقت رقمياً بنظام 24 ساعة؟", o: ["15:30", "13:30", "03:30", "14:30"], a: 0 },
             { q: "تشير ساعة حائط إلى السابعة والربع في فترة المساء. ما الوقت الموافق لها بنظام 24 ساعة؟", o: ["19:15", "18:15", "17:15", "16:15"], a: 0 },
             { q: "إذا كان عقرب الساعات يشير إلى 4 وعقرب الدقائق يشير إلى 9 في فترة بعد الظهر، فكم تكون الساعة بنظام 24 ساعة؟", o: ["16:45", "15:45", "04:45", "16:15"], a: 0 },
@@ -438,8 +536,6 @@
             { q: "يمارس أحمد رياضة المشي صباحاً، حيث يبدأ الساعة 06:20 وينتهي الساعة 07:15. ما الفترة الزمنية التي قضاها أحمد في المشي؟", o: ["55 دقيقة", "45 دقيقة", "ساعة و 5 دقائق", "50 دقيقة"], a: 0 },
             { q: "انطلق سعيد في رحلة من ولاية دبا عند الساعة (15:45) ووصل إلى مسقط في نفس اليوم عند الساعة (20:35). ما زمن الرحلة؟", o: ["4 ساعات و 50 دقيقة", "5 ساعات و 10 دقائق", "4 ساعات و 30 دقيقة", "5 ساعات و 20 دقيقة"], a: 0 },
             { q: "خرج ناجي وعائلته في رحلة برية استغرقت 34 ساعة من مسقط إلى مكة المكرمة، وكان وصولهم يوم الأربعاء الساعة 2:00 صباحاً. ما يوم المغادرة من مسقط؟", o: ["الاثنين", "الثلاثاء", "الأحد", "السبت"], a: 0 },
-
-            // أسئلة درس التقويمات (16 سؤالاً)
             { q: "أي من العبارات التالية تعتبر عبارة صحيحة؟", o: ["في اليوم الواحد 1440 دقيقة", "في اليومين 36 ساعة", "العقد = 9 سنوات", "القرن به 9 عقود"], a: 0 },
             { q: "احسب عدد الساعات في 8 أيام:", o: ["192 ساعة", "180 ساعة", "168 ساعة", "200 ساعة"], a: 0 },
             { q: "كم يساوي القرن الواحد بالسنوات وبالعقود؟", o: ["100 سنة (10 عقود)", "90 سنة (9 عقود)", "1000 سنة (10 عقود)", "50 سنة (5 عقود)"], a: 0 },
@@ -474,13 +570,11 @@
                 const x2 = 200 + 198 * Math.cos(Math.PI * (end-90)/180); 
                 const y2 = 200 + 198 * Math.sin(Math.PI * (end-90)/180);
                 
-                // 1. رسم وتلوين شريحة المثلث / القطاع
                 const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
                 path.setAttribute("d", `M200,200 L${x1},${y1} A198,198 0 0,1 ${x2},${y2} Z`);
                 path.setAttribute("fill", colors[i % colors.length]); 
                 svgSegments.appendChild(path);
                 
-                // 2. إنشاء مسار قص (ClipPath) بمقاس مثلث الشريحة
                 const clip = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
                 clip.setAttribute("id", `clip-wedge-${i}`);
                 const clipPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -488,7 +582,6 @@
                 clip.appendChild(clipPath);
                 defs.appendChild(clip);
 
-                // 3. وضع الصورة لملء المثلث والقطاع معتدلة وموجهة نحو رأس الشريحة
                 const mid = start + slice / 2;
                 const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
                 g.setAttribute("clip-path", `url(#clip-wedge-${i})`);
@@ -517,7 +610,6 @@
                 g.appendChild(img);
                 svgImages.appendChild(g);
 
-                // 4. خط الفاصل الذهبي البارز فوق الصور (Divider Line)
                 const darkLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
                 darkLine.setAttribute("x1", "200");
                 darkLine.setAttribute("y1", "200");
@@ -538,7 +630,6 @@
                 svgDividers.appendChild(goldLine);
             }
 
-            // إطار دائري خارجي فوق الفواصل لختم الحواف بأناقة
             const outerRim = document.createElementNS("http://www.w3.org/2000/svg", "circle");
             outerRim.setAttribute("cx", "200");
             outerRim.setAttribute("cy", "200");
@@ -551,13 +642,11 @@
 
         function startGame() {
             playBackgroundMusic();
-            
             document.getElementById('startScreen').classList.add('hidden');
             const gScreen = document.getElementById('gameScreen');
             gScreen.classList.remove('hidden');
             gScreen.classList.add('grid');
             document.getElementById('floatingHomeBtn').classList.remove('hidden');
-            
             state.qList = [...questions].sort(() => Math.random() - 0.5);
             updateUI();
         }
@@ -572,14 +661,11 @@
             if(state.timer) clearInterval(state.timer);
             isSpinning = false;
             stopSfx('spin');
-            
-            // إعادة ضبط الحالة
             state = { qList: [], currentQ: null, scores: [0,0,0,0], turn: 0, qCount: 0, timer: null };
             rotation = 0;
             const wheel = document.getElementById('wheel');
             if (wheel) wheel.style.transform = `rotate(0deg)`;
             
-            // إظهار شاشة البداية وإخفاء الشاشات الأخرى
             document.getElementById('gameScreen').classList.add('hidden');
             document.getElementById('gameScreen').classList.remove('grid');
             document.getElementById('resultScreen').classList.add('hidden');
@@ -599,7 +685,6 @@
             if(isSpinning || state.qList.length === 0) return;
             isSpinning = true;
             document.getElementById('spinBtn').disabled = true;
-            
             playSfx('spin');
 
             const extraSpins = 1800; 
@@ -748,16 +833,9 @@
         function toggleMute() { 
             isMuted = !isMuted; 
             bgAudio.muted = isMuted;
-
-            Object.values(sfx).forEach(aud => {
-                aud.muted = isMuted;
-            });
-
+            Object.values(sfx).forEach(aud => { aud.muted = isMuted; });
             document.getElementById('muteBtn').textContent = isMuted ? '🔇' : '🔊'; 
-            
-            if(!isMuted && bgAudio.paused) {
-                bgAudio.play().catch(()=>{});
-            }
+            if(!isMuted && bgAudio.paused) { bgAudio.play().catch(()=>{}); }
         }
     </script>
 </body>
